@@ -8,24 +8,43 @@ import numpy as np
 import torchvision
 from torchvision import transforms
 from PIL import Image
+import dlib
 import spaces
+import cv2
 
 warnings.filterwarnings("ignore")
+# MENTION USINF FAIRFACE SCRIPT AS BASIS FOR THIS 
 
-
+# Ensure directory exists
 def ensure_dir(directory):
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
 
+# Convert dlib rectangle to standard bounding box format (x, y, w, h)
+def rect_to_bb(rect):
+    x = rect.left()
+    y = rect.top()
+    w = rect.right() - x
+    h = rect.bottom() - y
+    return (x, y, w, h)
+
+# Function for cropping based on bounding box
+def crop_face(image, bbox):
+    x, y, w, h = bbox
+    return image[y:y+h, x:x+w]
 
 @spaces.GPU
 def predict_race_gender_age(
     save_prediction_at,
     imgs_path="prepared_faces/",
     model_path="fair_face_models/fairface_alldata_20191111.pt",
-    device="cpu",
+    device="mps",
+    max_face_size=224
 ):
     ensure_dir(os.path.dirname(save_prediction_at))
+
+    # Dlib face detector
+    detector = dlib.get_frontal_face_detector()
 
     img_names = [
         os.path.join(imgs_path, x)
@@ -39,16 +58,14 @@ def predict_race_gender_age(
     model = model.to(device)
     model.eval()
 
-    # Transform pipeline
     trans = transforms.Compose(
         [
-            transforms.Resize((224, 224)),
+            transforms.Resize((max_face_size, max_face_size)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
 
-    # Prediction results
     face_names = []
     race_preds = []
     gender_preds = []
@@ -60,37 +77,55 @@ def predict_race_gender_age(
             print("Processing image {}/{}".format(index, len(img_names)))
 
         try:
-            image = Image.open(img_name).convert("RGB")
-            image_tensor = trans(image).unsqueeze(0).to(device)
+            # Load image and convert to RGB
+            image = dlib.load_rgb_image(img_name)
+            gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-            with torch.no_grad():
-                outputs = model(image_tensor)
+            # Detect faces
+            faces = detector(gray_image, 1)
 
-            outputs = outputs.cpu().numpy().squeeze()
+            # If no face is detected, skip
+            if len(faces) == 0:
+                print(f"No faces detected in {img_name}, skipping...")
+                continue
 
-            # Extract predictions
-            race_outputs = outputs[:7]
-            gender_outputs = outputs[7:9]
-            age_outputs = outputs[9:18]
+            # For each face, crop and predict
+            for face in faces:
+                bbox = rect_to_bb(face)
+                cropped_face = crop_face(image, bbox)
+                pil_image = Image.fromarray(cropped_face)
 
-            race_score = np.exp(race_outputs) / np.sum(np.exp(race_outputs))
-            gender_score = np.exp(gender_outputs) / np.sum(np.exp(gender_outputs))
-            age_score = np.exp(age_outputs) / np.sum(np.exp(age_outputs))
+                # Resize to match model input size
+                pil_image = pil_image.resize((max_face_size, max_face_size))
+                image_tensor = trans(pil_image).unsqueeze(0).to(device)
 
-            race_pred = np.argmax(race_score)
-            gender_pred = np.argmax(gender_score)
-            age_pred = np.argmax(age_score)
+                # Predict using the model
+                with torch.no_grad():
+                    outputs = model(image_tensor)
 
-            face_names.append(img_name)
-            race_preds.append(race_pred)
-            gender_preds.append(gender_pred)
-            age_preds.append(age_pred)
-            race_scores.append(race_score)
+                outputs = outputs.cpu().numpy().squeeze()
+
+                race_outputs = outputs[:7]
+                gender_outputs = outputs[7:9]
+                age_outputs = outputs[9:18]
+
+                race_score = np.exp(race_outputs) / np.sum(np.exp(race_outputs))
+                gender_score = np.exp(gender_outputs) / np.sum(np.exp(gender_outputs))
+                age_score = np.exp(age_outputs) / np.sum(np.exp(age_outputs))
+
+                race_pred = np.argmax(race_score)
+                gender_pred = np.argmax(gender_score)
+                age_pred = np.argmax(age_score)
+
+                face_names.append(img_name)
+                race_preds.append(race_pred)
+                gender_preds.append(gender_pred)
+                age_preds.append(age_pred)
+                race_scores.append(race_score)
 
         except Exception as e:
             print(f"Error processing {img_name}: {e}")
 
-    # Map predictions to labels
     result = pd.DataFrame(
         {
             "face_name": face_names,
@@ -132,12 +167,9 @@ def predict_race_gender_age(
 
 
 if __name__ == "__main__":
-    # Set paths
-    IMAGE_DIR = "/Users/bohdan/Documents/CL_2024_Project/images1024x1024"  # Input directory containing prepared images
-    OUTPUT_CSV = (
-        "/Users/bohdan/Documents/CL_2024_Project/predictions.csv"  # Output CSV path
-    )
-    MODEL_PATH = "/Users/bohdan/Documents/CL_2024_Project/res34_fair_align_multi_7_20190809.pt"  # Path to FairFace model
+    IMAGE_DIR = "/Users/bohdan/Documents/CL_2024_Project/images_for_quantitative_analysis"  
+    OUTPUT_CSV = "/Users/bohdan/Documents/CL_2024_Project/predictions_for_QA.csv"  
+    MODEL_PATH = "/Users/bohdan/Documents/CL_2024_Project/res34_fair_align_multi_7_20190809.pt"  
 
     DEVICE = "mps"
 
