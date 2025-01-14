@@ -15,12 +15,10 @@ import cv2
 warnings.filterwarnings("ignore")
 # MENTION USINF FAIRFACE SCRIPT AS BASIS FOR THIS 
 
-# Ensure directory exists
 def ensure_dir(directory):
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
 
-# Convert dlib rectangle to standard bounding box format (x, y, w, h)
 def rect_to_bb(rect):
     x = rect.left()
     y = rect.top()
@@ -28,7 +26,6 @@ def rect_to_bb(rect):
     h = rect.bottom() - y
     return (x, y, w, h)
 
-# Function for cropping based on bounding box
 def crop_face(image, bbox):
     x, y, w, h = bbox
     return image[y:y+h, x:x+w]
@@ -43,7 +40,6 @@ def predict_race_gender_age(
 ):
     ensure_dir(os.path.dirname(save_prediction_at))
 
-    # Dlib face detector
     detector = dlib.get_frontal_face_detector()
 
     img_names = [
@@ -77,29 +73,23 @@ def predict_race_gender_age(
             print("Processing image {}/{}".format(index, len(img_names)))
 
         try:
-            # Load image and convert to RGB
             image = dlib.load_rgb_image(img_name)
             gray_image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-            # Detect faces
             faces = detector(gray_image, 1)
 
-            # If no face is detected, skip
             if len(faces) == 0:
                 print(f"No faces detected in {img_name}, skipping...")
                 continue
 
-            # For each face, crop and predict
             for face in faces:
                 bbox = rect_to_bb(face)
                 cropped_face = crop_face(image, bbox)
                 pil_image = Image.fromarray(cropped_face)
 
-                # Resize to match model input size
                 pil_image = pil_image.resize((max_face_size, max_face_size))
                 image_tensor = trans(pil_image).unsqueeze(0).to(device)
 
-                # Predict using the model
                 with torch.no_grad():
                     outputs = model(image_tensor)
 

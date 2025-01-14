@@ -39,7 +39,6 @@ def predict_race_gender_age(
     model = model.to(device)
     model.eval()
 
-    # Transform pipeline
     trans = transforms.Compose(
         [
             transforms.Resize((224, 224)),
@@ -48,7 +47,6 @@ def predict_race_gender_age(
         ]
     )
 
-    # Prediction results
     face_names = []
     race_preds = []
     gender_preds = []
@@ -68,7 +66,6 @@ def predict_race_gender_age(
 
             outputs = outputs.cpu().numpy().squeeze()
 
-            # Extract predictions
             race_outputs = outputs[:7]
             gender_outputs = outputs[7:9]
             age_outputs = outputs[9:18]
@@ -90,7 +87,6 @@ def predict_race_gender_age(
         except Exception as e:
             print(f"Error processing {img_name}: {e}")
 
-    # Map predictions to labels
     result = pd.DataFrame(
         {
             "face_name": face_names,

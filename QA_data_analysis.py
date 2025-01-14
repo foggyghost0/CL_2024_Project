@@ -22,12 +22,10 @@ def analyze_scores(csv_path):
             race = row["race"]
             if race not in ["Black", "East Asian"]:
                 continue
-            # Convert space-separated floats into a list
             scores_str = (
                 row["race_scores"].replace("\n", " ").replace("[", "").replace("]", "")
             )
             scores = [float(x) for x in scores_str.split()]
-            # Index for Black is 1, East Asian is 3
             index = 1 if race == "Black" else 3
             groups[(group, race)].append(scores[index])
     for (grp, race), vals in groups.items():
